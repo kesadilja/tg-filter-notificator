@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: tg-collector
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+  flyway:
+    default-schema: ${database.schema}
+    schemas:
+      - ${database.schema}
+    placeholders:
+      schema: ${database.schema}
+      table: ${database.table-name}
+
+database:
+  schema: ${DATABASE_SCHEMA:tg_collector}
+  table-name: ${DATABASE_TABLE:tracked_chat}
+
+telegram:
+  phone-number: ${TELEGRAM_PHONE_NUMBER}
+  api-id: ${TELEGRAM_API_ID}
+  api-hash: ${TELEGRAM_API_HASH}
+  database-directory: ${TELEGRAM_DATABASE_DIRECTORY:./tdlib-data}
