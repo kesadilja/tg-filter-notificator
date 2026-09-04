@@ -1,7 +1,5 @@
-package io.github.tracking;
+package io.github.chat;
 
-import io.github.chat.TrackedChat;
-import io.github.chat.TrackedChatService;
 import io.github.config.DatabaseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
