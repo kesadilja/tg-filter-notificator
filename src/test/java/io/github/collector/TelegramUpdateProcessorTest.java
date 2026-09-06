@@ -3,6 +3,7 @@ package io.github.collector;
 import io.github.chat.TrackedChat;
 import io.github.chat.TrackedChatService;
 import io.github.filter.FilterRuleService;
+import io.github.notification.TelegramNotificationService;
 import io.github.telegram.TelegramClient;
 import it.tdlight.jni.TdApi;
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +33,7 @@ class TelegramUpdateProcessorTest {
     private TelegramClient telegramClient;
     private TrackedChatService trackedChatService;
     private FilterRuleService filterRuleService;
+    private TelegramNotificationService notificationService;
     private TelegramUpdateProcessor processor;
 
     @BeforeEach
@@ -39,7 +41,8 @@ class TelegramUpdateProcessorTest {
         telegramClient = mock(TelegramClient.class);
         trackedChatService = mock(TrackedChatService.class);
         filterRuleService = mock(FilterRuleService.class);
-        processor = new TelegramUpdateProcessor(telegramClient, trackedChatService, filterRuleService);
+        notificationService = mock(TelegramNotificationService.class);
+        processor = new TelegramUpdateProcessor(telegramClient, trackedChatService, filterRuleService, notificationService);
     }
 
     @AfterEach
@@ -112,6 +115,23 @@ class TelegramUpdateProcessorTest {
 
         verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
         verify(filterRuleService, never()).matches(org.mockito.ArgumentMatchers.any());
+        verify(notificationService, never()).repost(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void repostsAnIncomingMessageThatMatchesTheFilter() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        var message = message(CHAT_ID, 101L, false);
+        message.content = new TdApi.MessageText(
+                new TdApi.FormattedText("Java developer role", new TdApi.TextEntity[0]), null, null);
+        when(filterRuleService.matches("Java developer role")).thenReturn(true);
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(message));
+
+        verify(notificationService, timeout(1_000)).repost(org.mockito.ArgumentMatchers.any(TdApi.Message.class));
+        verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
     }
 
     @Test

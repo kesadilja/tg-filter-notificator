@@ -6,6 +6,7 @@ import io.github.config.DatabaseProperties;
 import io.github.filter.FilterRule;
 import io.github.filter.FilterRuleService;
 import io.github.telegram.TelegramClient;
+import io.github.notification.TelegramNotificationService;
 import it.tdlight.jni.TdApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +34,9 @@ class TelegramUpdateProcessorIntegrationTest {
 
     @MockitoBean
     private TelegramClient telegramClient;
+
+    @MockitoBean
+    private TelegramNotificationService notificationService;
 
     @Autowired
     private TelegramUpdateProcessor processor;
