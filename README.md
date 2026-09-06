@@ -4,6 +4,12 @@ A Spring Boot service that follows selected Telegram chats through TDLight. It l
 messages and edit/delete updates, stores one high-water mark per chat in PostgreSQL, and uses
 Telegram history to recover messages missed while disconnected.
 
+Incoming text messages are logged only when they match a filtering rule. Each rule contains
+semicolon-separated keywords; prefix a keyword with `!` to exclude messages containing it. All
+keywords in one rule must match, while any stored rule may accept the message. Matching ignores
+case. For example, `java;spring;!junior` accepts a message containing both `java` and `spring`
+unless it also contains `junior`.
+
 ## Configuration
 
 Set these environment variables before starting the application:
@@ -21,7 +27,8 @@ DATABASE_TABLE=tracked_chat
 ```
 
 The first Telegram login is interactive and requests the authentication code/password from the
-console. Flyway creates the `tg_collector.tracked_chat` table automatically.
+console. Flyway creates the `tg_collector.tracked_chat` and `tg_collector.filter_rule` tables
+automatically. Filtering rules can be managed through `FilterRuleService`.
 
 Run the application with:
 
