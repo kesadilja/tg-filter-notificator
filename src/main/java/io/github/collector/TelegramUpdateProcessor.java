@@ -2,6 +2,7 @@ package io.github.collector;
 
 import io.github.chat.TrackedChat;
 import io.github.chat.TrackedChatService;
+import io.github.filter.FilterRuleService;
 import io.github.telegram.TelegramClient;
 import it.tdlight.jni.TdApi;
 import org.slf4j.Logger;
@@ -22,14 +23,19 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
 
     private final TelegramClient telegramClient;
     private final TrackedChatService trackedChatService;
+    private final FilterRuleService filterRuleService;
     private final ExecutorService eventExecutor;
     private final AtomicBoolean connectionReady = new AtomicBoolean();
     private volatile boolean running;
 
     @Autowired
-    public TelegramUpdateProcessor(TelegramClient telegramClient, TrackedChatService trackedChatService) {
+    public TelegramUpdateProcessor(
+            TelegramClient telegramClient,
+            TrackedChatService trackedChatService,
+            FilterRuleService filterRuleService) {
         this.telegramClient = telegramClient;
         this.trackedChatService = trackedChatService;
+        this.filterRuleService = filterRuleService;
         this.eventExecutor = Executors.newSingleThreadExecutor(Thread.ofPlatform().name(THREAD_NAME).factory());
     }
 
@@ -229,7 +235,7 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
             return;
         }
 
-        if (!message.isOutgoing) {
+        if (!message.isOutgoing && filterRuleService.matches(messageText(message.content))) {
             log.info("Telegram new message chatId={} messageId={} sender={} date={} content={}",
                     message.chatId, message.id, describeSender(message.senderId), message.date,
                     describeContent(message.content));
@@ -237,6 +243,13 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         if (message.id >= 0) {
             trackedChatService.advanceCursor(message.chatId, message.id);
         }
+    }
+
+    private static String messageText(TdApi.MessageContent content) {
+        if (content instanceof TdApi.MessageText messageText && messageText.text != null) {
+            return messageText.text.text;
+        }
+        return null;
     }
 
     private static String describeSender(TdApi.MessageSender sender) {

@@ -2,6 +2,7 @@ package io.github.collector;
 
 import io.github.chat.TrackedChat;
 import io.github.chat.TrackedChatService;
+import io.github.filter.FilterRuleService;
 import io.github.telegram.TelegramClient;
 import it.tdlight.jni.TdApi;
 import org.junit.jupiter.api.AfterEach;
@@ -30,13 +31,15 @@ class TelegramUpdateProcessorTest {
 
     private TelegramClient telegramClient;
     private TrackedChatService trackedChatService;
+    private FilterRuleService filterRuleService;
     private TelegramUpdateProcessor processor;
 
     @BeforeEach
     void setUp() {
         telegramClient = mock(TelegramClient.class);
         trackedChatService = mock(TrackedChatService.class);
-        processor = new TelegramUpdateProcessor(telegramClient, trackedChatService);
+        filterRuleService = mock(FilterRuleService.class);
+        processor = new TelegramUpdateProcessor(telegramClient, trackedChatService, filterRuleService);
     }
 
     @AfterEach
@@ -78,6 +81,37 @@ class TelegramUpdateProcessorTest {
         listener.onNewMessage(new TdApi.UpdateNewMessage(message(CHAT_ID, 101L, false)));
 
         verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
+    }
+
+    @Test
+    void passesIncomingTextThroughTheFilterAndAdvancesCursorWhenItDoesNotMatch() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        when(filterRuleService.matches("Java developer role")).thenReturn(false);
+        var message = message(CHAT_ID, 101L, false);
+        message.content = new TdApi.MessageText(
+                new TdApi.FormattedText("Java developer role", new TdApi.TextEntity[0]), null, null);
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(message));
+
+        verify(filterRuleService, timeout(1_000)).matches("Java developer role");
+        verify(trackedChatService).advanceCursor(CHAT_ID, 101L);
+    }
+
+    @Test
+    void doesNotFilterOutgoingMessages() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        var message = message(CHAT_ID, 101L, true);
+        message.content = new TdApi.MessageText(
+                new TdApi.FormattedText("Java developer role", new TdApi.TextEntity[0]), null, null);
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(message));
+
+        verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
+        verify(filterRuleService, never()).matches(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
