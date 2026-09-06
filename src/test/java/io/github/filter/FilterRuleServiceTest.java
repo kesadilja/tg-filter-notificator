@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Import(FilterRuleService.class)
 @EnableConfigurationProperties(DatabaseProperties.class)
@@ -58,5 +60,14 @@ class FilterRuleServiceTest {
         assertThat(service.matches("Junior Java and Spring developer")).isFalse();
         assertThat(service.removeRule(rule.id())).isTrue();
         assertThat(service.matches("Senior Java and Spring developer")).isFalse();
+    }
+
+    @Test
+    void realRules() {
+        var rule = "одежда;детская;!школьник";
+        assertFalse(FilterRuleService.matchesRule(rule, "Детская одежда на дошкольника"));
+        assertFalse(FilterRuleService.matchesRule(rule, "Детская одежда для школьника"));
+        assertFalse(FilterRuleService.matchesRule(rule, "Одежда для ребёнков"));
+        assertTrue(FilterRuleService.matchesRule(rule, "Одежда детская: бодики, слипы"));
     }
 }
