@@ -68,6 +68,18 @@ public final class TdLightTelegramClient implements TelegramClient {
     }
 
     @Override
+    public CompletableFuture<TdApi.Messages> forwardMessage(long destinationChatId, long sourceChatId, long messageId) {
+        return client.send(new TdApi.ForwardMessages(
+                destinationChatId,
+                null,
+                sourceChatId,
+                new long[]{messageId},
+                new TdApi.MessageSendOptions(),
+                false,
+                false));
+    }
+
+    @Override
     public synchronized void close() throws Exception {
         var startedClient = client;
         client = null;

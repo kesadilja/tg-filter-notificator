@@ -13,5 +13,6 @@ public record TelegramProperties(
     @NotBlank String phoneNumber,
     @Min(1) int apiId,
     @NotBlank String apiHash,
-    @NotNull Path databaseDirectory) {
+    @NotNull Path databaseDirectory,
+    @NotNull Long notificationChannelId) {
 }
