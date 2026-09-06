@@ -9,11 +9,16 @@ import it.tdlight.jni.TdApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -134,6 +139,41 @@ class TelegramUpdateProcessorTest {
         verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
     }
 
+    @ParameterizedTest(name = "{0} caption")
+    @MethodSource("captionContents")
+    void passesEveryMediaCaptionThroughTheFilterAndRepostsOnMatch(
+            String ignoredName, Supplier<TdApi.MessageContent> contentSupplier) {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        when(filterRuleService.matches("Java developer role")).thenReturn(true);
+        var message = message(CHAT_ID, 101L, false);
+        message.content = contentSupplier.get();
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(message));
+
+        verify(filterRuleService, timeout(1_000)).matches("Java developer role");
+        verify(notificationService, timeout(1_000)).repost(message);
+        verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
+    }
+
+    @Test
+    void doesNotRepostBlankCaptionsButAdvancesTheCursor() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        var photo = new TdApi.MessagePhoto();
+        photo.caption = formattedText("   ");
+        var message = message(CHAT_ID, 101L, false);
+        message.content = photo;
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(message));
+
+        verify(filterRuleService, timeout(1_000)).matches("   ");
+        verify(notificationService, never()).repost(org.mockito.ArgumentMatchers.any(TdApi.Message.class));
+        verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
+    }
+
     @Test
     void newMessageIgnoresNullUntrackedOldAndNegativeMessages() {
         when(trackedChatService.findChat(CHAT_ID))
@@ -235,6 +275,32 @@ class TelegramUpdateProcessorTest {
         message.id = messageId;
         message.isOutgoing = outgoing;
         return message;
+    }
+
+    private static Stream<Arguments> captionContents() {
+        return Stream.of(
+                captionContent("animation", TdApi.MessageAnimation::new, content -> ((TdApi.MessageAnimation) content).caption = formattedText("Java developer role")),
+                captionContent("audio", TdApi.MessageAudio::new, content -> ((TdApi.MessageAudio) content).caption = formattedText("Java developer role")),
+                captionContent("document", TdApi.MessageDocument::new, content -> ((TdApi.MessageDocument) content).caption = formattedText("Java developer role")),
+                captionContent("paid media", TdApi.MessagePaidMedia::new, content -> ((TdApi.MessagePaidMedia) content).caption = formattedText("Java developer role")),
+                captionContent("photo", TdApi.MessagePhoto::new, content -> ((TdApi.MessagePhoto) content).caption = formattedText("Java developer role")),
+                captionContent("video", TdApi.MessageVideo::new, content -> ((TdApi.MessageVideo) content).caption = formattedText("Java developer role")),
+                captionContent("voice note", TdApi.MessageVoiceNote::new, content -> ((TdApi.MessageVoiceNote) content).caption = formattedText("Java developer role")));
+    }
+
+    private static Arguments captionContent(
+            String name,
+            Supplier<TdApi.MessageContent> supplier,
+            java.util.function.Consumer<TdApi.MessageContent> captionSetter) {
+        return Arguments.of(name, (Supplier<TdApi.MessageContent>) () -> {
+            var content = supplier.get();
+            captionSetter.accept(content);
+            return content;
+        });
+    }
+
+    private static TdApi.FormattedText formattedText(String text) {
+        return new TdApi.FormattedText(text, new TdApi.TextEntity[0]);
     }
 
     private static TdApi.Messages messages(long... messageIds) {

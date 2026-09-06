@@ -199,8 +199,9 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
     }
 
     private static String describeContent(TdApi.MessageContent content) {
-        if (content instanceof TdApi.MessageText messageText && messageText.text != null) {
-            return "text:" + messageText.text.text;
+        var text = messageText(content);
+        if (text != null) {
+            return "text:" + text;
         }
         return typeName(content);
     }
@@ -254,8 +255,20 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         if (content instanceof TdApi.MessageText messageText && messageText.text != null) {
             return messageText.text.text;
         }
+        if (content instanceof TdApi.MessageAnimation message) return getText(message.caption);
+        if (content instanceof TdApi.MessageAudio message) return getText(message.caption);
+        if (content instanceof TdApi.MessageDocument message) return getText(message.caption);
+        if (content instanceof TdApi.MessagePaidMedia message) return getText(message.caption);
+        if (content instanceof TdApi.MessagePhoto message) return getText(message.caption);
+        if (content instanceof TdApi.MessageVideo message) return getText(message.caption);
+        if (content instanceof TdApi.MessageVoiceNote message) return getText(message.caption);
         return null;
     }
+
+    private static String getText(TdApi.FormattedText caption) {
+        return Optional.of(caption).map(c -> c.text).orElse(null);
+    }
+
 
     private static String describeSender(TdApi.MessageSender sender) {
         return switch (sender) {
