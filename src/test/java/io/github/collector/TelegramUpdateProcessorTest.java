@@ -120,7 +120,8 @@ class TelegramUpdateProcessorTest {
 
         verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
         verify(filterRuleService, never()).matches(org.mockito.ArgumentMatchers.any());
-        verify(notificationService, never()).repost(org.mockito.ArgumentMatchers.any());
+        verify(notificationService, never()).repost(
+                org.mockito.ArgumentMatchers.any(TdApi.Message.class));
     }
 
     @Test
@@ -172,6 +173,105 @@ class TelegramUpdateProcessorTest {
         verify(filterRuleService, timeout(1_000)).matches("   ");
         verify(notificationService, never()).repost(org.mockito.ArgumentMatchers.any(TdApi.Message.class));
         verify(trackedChatService, timeout(1_000)).advanceCursor(CHAT_ID, 101L);
+    }
+
+    @Test
+    void repostsEveryPhotoInAnAlbumWhenAnyCaptionMatches() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        when(filterRuleService.matches("Java developer role")).thenReturn(true);
+        var firstPhoto = albumPhoto(101L, 42L, "Java developer role");
+        var secondPhoto = albumPhoto(102L, 42L, null);
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(secondPhoto));
+        processor.onNewMessage(new TdApi.UpdateNewMessage(firstPhoto));
+        processor.onNewMessage(new TdApi.UpdateNewMessage(firstPhoto));
+
+        verify(notificationService, timeout(2_000)).repost(
+                org.mockito.ArgumentMatchers.<List<TdApi.Message>>argThat(
+                        messages -> messages.equals(List.of(firstPhoto, secondPhoto))));
+        verify(trackedChatService, timeout(2_000)).advanceCursor(CHAT_ID, 102L);
+    }
+
+    @Test
+    void doesNotRepostAnUnmatchedPhotoAlbumButAdvancesItsCursor() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        var firstPhoto = albumPhoto(101L, 42L, "Unrelated caption");
+        var secondPhoto = albumPhoto(102L, 42L, null);
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(firstPhoto));
+        processor.onNewMessage(new TdApi.UpdateNewMessage(secondPhoto));
+
+        verify(trackedChatService, timeout(2_000)).advanceCursor(CHAT_ID, 102L);
+        verify(notificationService, never()).repost(
+                org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    void keepsDifferentPhotoAlbumsSeparate() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        when(filterRuleService.matches("First match")).thenReturn(true);
+        when(filterRuleService.matches("Second match")).thenReturn(true);
+        var firstAlbumPhoto = albumPhoto(101L, 42L, "First match");
+        var secondAlbumPhoto = albumPhoto(102L, 43L, "Second match");
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(firstAlbumPhoto));
+        processor.onNewMessage(new TdApi.UpdateNewMessage(secondAlbumPhoto));
+
+        verify(notificationService, timeout(500)).repost(
+                org.mockito.ArgumentMatchers.<List<TdApi.Message>>argThat(
+                        messages -> messages.size() == 1 && messages.getFirst() == firstAlbumPhoto));
+        verify(trackedChatService, timeout(2_000)).advanceCursor(CHAT_ID, 102L);
+        verify(notificationService).repost(
+                org.mockito.ArgumentMatchers.<List<TdApi.Message>>argThat(
+                        messages -> messages.size() == 1 && messages.getFirst() == secondAlbumPhoto));
+    }
+
+    @Test
+    void doesNotAdvanceTheAlbumCursorWhenForwardingFails() {
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        when(filterRuleService.matches("Java developer role")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("forward failed"))
+                .when(notificationService).repost(org.mockito.ArgumentMatchers.anyList());
+        var photo = albumPhoto(101L, 42L, "Java developer role");
+        processor.start();
+
+        processor.onNewMessage(new TdApi.UpdateNewMessage(photo));
+
+        verify(notificationService, timeout(2_000)).repost(
+                org.mockito.ArgumentMatchers.<List<TdApi.Message>>argThat(
+                        messages -> messages.size() == 1 && messages.getFirst() == photo));
+        verify(trackedChatService, never()).advanceCursor(CHAT_ID, 101L);
+    }
+
+    @Test
+    void flushesARecoveredPhotoAlbumWithoutWaitingForTheQuietPeriod() {
+        var firstPhoto = albumPhoto(101L, 42L, "Java developer role");
+        var secondPhoto = albumPhoto(102L, 42L, null);
+        when(trackedChatService.listChats()).thenReturn(List.of(new TrackedChat(CHAT_ID, 100L)));
+        when(trackedChatService.findChat(CHAT_ID))
+                .thenReturn(Optional.of(new TrackedChat(CHAT_ID, 100L)));
+        when(telegramClient.getChatHistory(CHAT_ID, 0L, 0, 100, false))
+                .thenReturn(CompletableFuture.completedFuture(
+                        new TdApi.Messages(2, new TdApi.Message[]{secondPhoto, firstPhoto})));
+        when(telegramClient.getChatHistory(CHAT_ID, 101L, 0, 100, false))
+                .thenReturn(CompletableFuture.completedFuture(messages(100L)));
+        when(filterRuleService.matches("Java developer role")).thenReturn(true);
+        processor.start();
+
+        processor.onConnectionStateChanged(
+                new TdApi.UpdateConnectionState(new TdApi.ConnectionStateReady()));
+
+        verify(notificationService, timeout(500)).repost(
+                org.mockito.ArgumentMatchers.<List<TdApi.Message>>argThat(
+                        messages -> messages.equals(List.of(firstPhoto, secondPhoto))));
+        verify(trackedChatService, timeout(500)).advanceCursor(CHAT_ID, 102L);
     }
 
     @Test
@@ -274,6 +374,15 @@ class TelegramUpdateProcessorTest {
         message.chatId = chatId;
         message.id = messageId;
         message.isOutgoing = outgoing;
+        return message;
+    }
+
+    private static TdApi.Message albumPhoto(long messageId, long mediaAlbumId, String caption) {
+        var photo = new TdApi.MessagePhoto();
+        photo.caption = caption == null ? null : formattedText(caption);
+        var message = message(CHAT_ID, messageId, false);
+        message.mediaAlbumId = mediaAlbumId;
+        message.content = photo;
         return message;
     }
 

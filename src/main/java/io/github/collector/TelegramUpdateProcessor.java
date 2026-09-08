@@ -20,13 +20,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateListener {
     private static final Logger log = LoggerFactory.getLogger(TelegramUpdateProcessor.class);
     private static final int HISTORY_PAGE_SIZE = 100;
+    private static final long PHOTO_ALBUM_QUIET_PERIOD_SECONDS = 1;
     private static final String THREAD_NAME = "telegram-collector-events";
 
     private final TelegramClient telegramClient;
     private final TrackedChatService trackedChatService;
     private final FilterRuleService filterRuleService;
     private final TelegramNotificationService notificationService;
-    private final ExecutorService eventExecutor;
+    private final ScheduledExecutorService eventExecutor;
+    private final Map<AlbumKey, PendingPhotoAlbum> pendingPhotoAlbums = new HashMap<>();
     private final AtomicBoolean connectionReady = new AtomicBoolean();
     private volatile boolean running;
 
@@ -40,7 +42,8 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         this.trackedChatService = trackedChatService;
         this.filterRuleService = filterRuleService;
         this.notificationService = notificationService;
-        this.eventExecutor = Executors.newSingleThreadExecutor(Thread.ofPlatform().name(THREAD_NAME).factory());
+        this.eventExecutor = Executors.newSingleThreadScheduledExecutor(
+                Thread.ofPlatform().name(THREAD_NAME).factory());
     }
 
     @Override
@@ -60,6 +63,7 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         if (!running) return;
         running = false;
         connectionReady.set(false);
+        flushPendingAlbumsBeforeShutdown();
         try {
             telegramClient.close();
         } catch (Exception exception) {
@@ -151,6 +155,7 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         var recovered = loadMessagesAfter(trackedChat.chatId(), trackedChat.lastMessageId());
         recovered.sort(Comparator.comparingLong(message -> message.id));
         recovered.forEach(this::process);
+        flushPendingPhotoAlbums(trackedChat.chatId(), null);
         if (!recovered.isEmpty()) {
             log.info("Recovered {} Telegram messages for chatId={}", recovered.size(), trackedChat.chatId());
         }
@@ -213,17 +218,19 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
     private void submit(String operation, Runnable task) {
         if (!running) return;
         try {
-            eventExecutor.execute(() -> {
-                try {
-                    task.run();
-                } catch (RuntimeException exception) {
-                    log.error("Failed to process Telegram {}", operation, exception);
-                }
-            });
+            eventExecutor.execute(() -> runSafely(operation, task));
         } catch (RejectedExecutionException exception) {
             if (running) {
                 log.error("Telegram {} was rejected by the event executor", operation, exception);
             }
+        }
+    }
+
+    private void runSafely(String operation, Runnable task) {
+        try {
+            task.run();
+        } catch (RuntimeException exception) {
+            log.error("Failed to process Telegram {}", operation, exception);
         }
     }
 
@@ -235,8 +242,20 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         if (trackedChat.isEmpty()) {
             return;
         }
+        var albumKey = photoAlbumKey(message);
+        if (flushPendingPhotoAlbums(message.chatId, albumKey)) {
+            trackedChat = trackedChatService.findChat(message.chatId);
+            if (trackedChat.isEmpty()) {
+                return;
+            }
+        }
         var cursor = trackedChat.get().lastMessageId();
         if (cursor != null && message.id <= cursor) {
+            return;
+        }
+
+        if (albumKey != null) {
+            bufferPhotoAlbum(albumKey, message);
             return;
         }
 
@@ -248,6 +267,68 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
         }
         if (message.id >= 0) {
             trackedChatService.advanceCursor(message.chatId, message.id);
+        }
+    }
+
+    private AlbumKey photoAlbumKey(TdApi.Message message) {
+        if (!message.isOutgoing && message.mediaAlbumId != 0 && message.content instanceof TdApi.MessagePhoto) {
+            return new AlbumKey(message.chatId, message.mediaAlbumId);
+        }
+        return null;
+    }
+
+    private void bufferPhotoAlbum(AlbumKey albumKey, TdApi.Message message) {
+        var album = pendingPhotoAlbums.computeIfAbsent(albumKey, ignored -> new PendingPhotoAlbum());
+        album.messages.put(message.id, message);
+        if (album.flushTask != null) {
+            album.flushTask.cancel(false);
+        }
+        album.flushTask = eventExecutor.schedule(
+                () -> runSafely("photo album", () -> flushPhotoAlbum(albumKey)),
+                PHOTO_ALBUM_QUIET_PERIOD_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    private boolean flushPendingPhotoAlbums(long chatId, AlbumKey except) {
+        var albumKeys = pendingPhotoAlbums.keySet().stream()
+                .filter(key -> key.chatId == chatId && !key.equals(except))
+                .toList();
+        albumKeys.forEach(this::flushPhotoAlbum);
+        return !albumKeys.isEmpty();
+    }
+
+    private void flushPhotoAlbum(AlbumKey albumKey) {
+        var album = pendingPhotoAlbums.remove(albumKey);
+        if (album == null) {
+            return;
+        }
+        if (album.flushTask != null) {
+            album.flushTask.cancel(false);
+        }
+        var messages = List.copyOf(album.messages.values());
+        boolean matches = messages.stream()
+                .map(message -> messageText(message.content))
+                .anyMatch(filterRuleService::matches);
+        if (matches) {
+            log.info("Telegram photo album matched chatId={} mediaAlbumId={} messageIds={}",
+                    albumKey.chatId, albumKey.mediaAlbumId,
+                    messages.stream().map(message -> message.id).toList());
+            notificationService.repost(messages);
+        }
+        long lastMessageId = messages.getLast().id;
+        if (lastMessageId >= 0) {
+            trackedChatService.advanceCursor(albumKey.chatId, lastMessageId);
+        }
+    }
+
+    private void flushPendingAlbumsBeforeShutdown() {
+        try {
+            eventExecutor.submit(() -> List.copyOf(pendingPhotoAlbums.keySet()).forEach(this::flushPhotoAlbum))
+                    .get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException | TimeoutException | RejectedExecutionException exception) {
+            log.error("Failed to flush pending Telegram photo albums during shutdown", exception);
         }
     }
 
@@ -266,7 +347,7 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
     }
 
     private static String getText(TdApi.FormattedText caption) {
-        return Optional.of(caption).map(c -> c.text).orElse(null);
+        return Optional.ofNullable(caption).map(c -> c.text).orElse(null);
     }
 
 
@@ -277,6 +358,14 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
             case null -> "unknown";
             default -> sender.getClass().getSimpleName();
         };
+    }
+
+    private record AlbumKey(long chatId, long mediaAlbumId) {
+    }
+
+    private static final class PendingPhotoAlbum {
+        private final NavigableMap<Long, TdApi.Message> messages = new TreeMap<>();
+        private ScheduledFuture<?> flushTask;
     }
 
 }

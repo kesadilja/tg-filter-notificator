@@ -9,6 +9,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.mockito.Mockito.verify;
 
@@ -32,6 +33,27 @@ class TelegramNotificationServiceTest {
         message.chatId = SOURCE_CHAT_ID;
         message.id = MESSAGE_ID;
         telegramNotificationService.repost(message);
-        verify(telegramClient).forwardMessage(NOTIFICATION_CHANNEL_ID, SOURCE_CHAT_ID, MESSAGE_ID);
+        verify(telegramClient).forwardMessages(
+                NOTIFICATION_CHANNEL_ID, SOURCE_CHAT_ID, new long[]{MESSAGE_ID});
+    }
+
+    @Test
+    void forwardsAnAlbumAsOneOrderedBatch() {
+        TelegramNotificationService telegramNotificationService =
+                new TelegramNotificationService(telegramClient, properties);
+        var laterMessage = message(335L);
+        var earlierMessage = message(334L);
+
+        telegramNotificationService.repost(List.of(laterMessage, earlierMessage));
+
+        verify(telegramClient).forwardMessages(
+                NOTIFICATION_CHANNEL_ID, SOURCE_CHAT_ID, new long[]{334L, 335L});
+    }
+
+    private static TdApi.Message message(long messageId) {
+        var message = new TdApi.Message();
+        message.chatId = SOURCE_CHAT_ID;
+        message.id = messageId;
+        return message;
     }
 }

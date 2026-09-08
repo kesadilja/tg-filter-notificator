@@ -14,7 +14,8 @@ public interface TelegramClient extends AutoCloseable {
     CompletableFuture<TdApi.Messages> getChatHistory(
             long chatId, long fromMessageId, int offset, int limit, boolean onlyLocal);
 
-    CompletableFuture<TdApi.Messages> forwardMessage(long destinationChatId, long sourceChatId, long messageId);
+    CompletableFuture<TdApi.Messages> forwardMessages(
+            long destinationChatId, long sourceChatId, long[] messageIds);
 
     @Override
     void close() throws Exception;
