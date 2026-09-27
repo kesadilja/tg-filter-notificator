@@ -56,10 +56,41 @@ class FilterRuleServiceTest {
 
         var rule = service.listRules().getFirst();
         assertThat(rule.rule()).isEqualTo("Java;Spring;!Junior");
+        assertThat(rule.active()).isTrue();
         assertThat(service.matches("Senior java and SPRING developer")).isTrue();
         assertThat(service.matches("Junior Java and Spring developer")).isFalse();
         assertThat(service.removeRule(rule.id())).isTrue();
         assertThat(service.matches("Senior Java and Spring developer")).isFalse();
+    }
+
+    @Test
+    void inactiveRulesAreIgnoredAndCanBeReactivated() {
+        assertThat(service.addRule("Java;Spring")).isTrue();
+        var rule = service.listRules().getFirst();
+
+        assertThat(service.setRuleActive(rule.id(), false)).isTrue();
+        assertThat(service.listRules()).containsExactly(new FilterRule(rule.id(), "Java;Spring", false));
+        assertThat(service.matches("Java and Spring developer")).isFalse();
+
+        assertThat(service.setRuleActive(rule.id(), true)).isTrue();
+        assertThat(service.matches("Java and Spring developer")).isTrue();
+    }
+
+    @Test
+    void changingActivityOfUnknownRuleReturnsFalse() {
+        assertThat(service.setRuleActive(1, false)).isFalse();
+    }
+
+    @Test
+    void cachesRulesUntilTheyAreChangedThroughTheService() {
+        assertThat(service.addRule("Java")).isTrue();
+        assertThat(service.listRules()).extracting(FilterRule::rule).containsExactly("Java");
+
+        jdbcClient.sql("delete from " + databaseProperties.schema() + ".filter_rule").update();
+        assertThat(service.listRules()).extracting(FilterRule::rule).containsExactly("Java");
+
+        assertThat(service.addRule("Spring")).isTrue();
+        assertThat(service.listRules()).extracting(FilterRule::rule).containsExactly("Spring");
     }
 
     @Test

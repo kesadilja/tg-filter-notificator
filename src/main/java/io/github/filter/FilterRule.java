@@ -1,4 +1,4 @@
 package io.github.filter;
 
-public record FilterRule(long id, String rule) {
+public record FilterRule(long id, String rule, boolean active) {
 }
