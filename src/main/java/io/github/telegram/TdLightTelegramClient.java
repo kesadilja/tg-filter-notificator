@@ -1,6 +1,6 @@
 package io.github.telegram;
 
-import io.github.collector.TelegramUpdateListener;
+import io.github.processor.TelegramUpdateListener;
 import io.github.config.TelegramProperties;
 import it.tdlight.client.*;
 import it.tdlight.jni.TdApi;

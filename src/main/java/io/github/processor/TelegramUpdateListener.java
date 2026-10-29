@@ -1,4 +1,4 @@
-package io.github.collector;
+package io.github.processor;
 
 import it.tdlight.jni.TdApi;
 

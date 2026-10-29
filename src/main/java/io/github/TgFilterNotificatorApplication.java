@@ -8,9 +8,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 
 @SpringBootApplication
 @EnableConfigurationProperties({TelegramProperties.class, DatabaseProperties.class})
-public class TgCollectorApplication {
+public class TgFilterNotificatorApplication {
 
   public static void main(String[] args) {
-    SpringApplication.run(TgCollectorApplication.class, args);
+    SpringApplication.run(TgFilterNotificatorApplication.class, args);
   }
 }

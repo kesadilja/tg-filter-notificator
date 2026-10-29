@@ -1,4 +1,4 @@
-package io.github.collector;
+package io.github.processor;
 
 import io.github.chat.TrackedChat;
 import io.github.chat.TrackedChatService;
@@ -21,7 +21,7 @@ public class TelegramUpdateProcessor implements SmartLifecycle, TelegramUpdateLi
     private static final Logger log = LoggerFactory.getLogger(TelegramUpdateProcessor.class);
     private static final int HISTORY_PAGE_SIZE = 100;
     private static final long PHOTO_ALBUM_QUIET_PERIOD_SECONDS = 1;
-    private static final String THREAD_NAME = "telegram-collector-events";
+    private static final String THREAD_NAME = "telegram-filter-notificator-events";
 
     private final TelegramClient telegramClient;
     private final TrackedChatService trackedChatService;

@@ -1,6 +1,6 @@
 package io.github.telegram;
 
-import io.github.collector.TelegramUpdateListener;
+import io.github.processor.TelegramUpdateListener;
 import it.tdlight.jni.TdApi;
 
 import java.util.concurrent.CompletableFuture;

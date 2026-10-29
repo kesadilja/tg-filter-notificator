@@ -1,4 +1,4 @@
-package io.github.collector;
+package io.github.processor;
 
 import io.github.chat.TrackedChat;
 import io.github.chat.TrackedChatService;
