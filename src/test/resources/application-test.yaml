@@ -3,17 +3,9 @@ spring:
     url: jdbc:postgresql://localhost:5433/postgres
     username: postgres
     password: postgres
-  flyway:
-    default-schema: ${database.schema}
-    schemas:
-      - ${database.schema}
-    placeholders:
-      schema: ${database.schema}
-      table: ${database.table-name}
 
 database:
   schema: tg_collector_test
-  table-name: tracked_chat_test
 
 telegram:
   phone-number: test
