@@ -1,6 +1,6 @@
 spring:
   application:
-    name: tg-collector
+    name: tg-filter-notificator
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/postgres}
     username: ${DATABASE_USERNAME:postgres}
@@ -14,7 +14,7 @@ spring:
       table: ${database.table-name}
 
 database:
-  schema: ${DATABASE_SCHEMA:tg_collector}
+  schema: ${DATABASE_SCHEMA:tg_filter_notifier}
   table-name: ${DATABASE_TABLE:tracked_chat}
 
 telegram:

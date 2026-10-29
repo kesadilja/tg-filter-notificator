@@ -12,7 +12,7 @@
     </parent>
 
     <groupId>io.github</groupId>
-    <artifactId>tg-collector</artifactId>
+    <artifactId>tg-filter-notificator</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>

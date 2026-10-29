@@ -1,4 +1,4 @@
-# tg-collector
+# tg-filter-notificator
 
 A Spring Boot service that follows selected Telegram chats through TDLight. It logs incoming
 messages and edit/delete updates, stores one high-water mark per chat in PostgreSQL, and uses
@@ -22,12 +22,12 @@ TELEGRAM_DATABASE_DIRECTORY=target/tdlib-data
 DATABASE_URL=jdbc:postgresql://localhost:5432/postgres
 DATABASE_USERNAME=postgres
 DATABASE_PASSWORD=postgres
-DATABASE_SCHEMA=tg_collector
+DATABASE_SCHEMA=tg_filter_notifier
 DATABASE_TABLE=tracked_chat
 ```
 
 The first Telegram login is interactive and requests the authentication code/password from the
-console. Flyway creates the `tg_collector.tracked_chat` and `tg_collector.filter_rule` tables
+console. Flyway creates the `tg_filter_notifier.tracked_chat` and `tg_filter_notifier.filter_rule` tables
 automatically. Filtering rules can be managed through `FilterRuleService`.
 
 Run the application with:
@@ -39,7 +39,7 @@ Run the application with:
 Chats are managed through `TrackedChatServiceImpl` for now. They can also be inserted manually:
 
 ```sql
-insert into tg_collector.tracked_chat (chat_id) values (-1001234567890)
+insert into tg_filter_notifier.tracked_chat (chat_id) values (-1001234567890)
 on conflict (chat_id) do nothing;
 ```
 
