@@ -5,7 +5,7 @@ spring:
     password: postgres
 
 database:
-  schema: tg_collector_test
+  schema: tg_filter_notificator_test
 
 telegram:
   phone-number: test

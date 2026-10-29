@@ -14,7 +14,7 @@ spring:
       table: ${database.table-name}
 
 database:
-  schema: ${DATABASE_SCHEMA:tg_filter_notifier}
+  schema: ${DATABASE_SCHEMA:tg_filter_notificator}
   table-name: ${DATABASE_TABLE:tracked_chat}
 
 telegram:
